@@ -2,6 +2,7 @@ import os
 import threading
 import asyncio
 import datetime
+import queue
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from extensions import db
@@ -15,6 +16,9 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 _telegram_service_instance = None
 _telegram_service_lock = threading.Lock()
+_sender_queue = queue.Queue(maxsize=5000)
+_sender_thread = None
+_sender_thread_lock = threading.Lock()
 
 class TelegramService:
     def __init__(self, app):
@@ -123,6 +127,46 @@ def get_telegram_service(app):
                 _telegram_service_instance = TelegramService(app)
     return _telegram_service_instance
 
+def _sender_worker(app):
+    """Single worker loop to avoid creating one thread/event loop per message."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    telegram_service = get_telegram_service(app)
+
+    while True:
+        item = _sender_queue.get()
+        if item is None:
+            _sender_queue.task_done()
+            break
+
+        kind, message = item
+        try:
+            if kind == "error":
+                loop.run_until_complete(telegram_service.send_error_log(message))
+            else:
+                loop.run_until_complete(telegram_service.send_message(message))
+        except Exception as e:
+            logger.error(f"Error in telegram sender worker: {e}")
+        finally:
+            _sender_queue.task_done()
+
+    loop.close()
+
+def _start_sender_worker(app):
+    global _sender_thread
+    if _sender_thread is None or not _sender_thread.is_alive():
+        with _sender_thread_lock:
+            if _sender_thread is None or not _sender_thread.is_alive():
+                _sender_thread = threading.Thread(target=_sender_worker, args=(app,), daemon=True)
+                _sender_thread.start()
+
+def _enqueue_telegram_message(app, kind, message):
+    _start_sender_worker(app)
+    try:
+        _sender_queue.put_nowait((kind, message))
+    except queue.Full:
+        logger.error("Telegram sender queue is full; dropping message")
+
 def run_telegram_bot(app):
     if not TELEGRAM_BOT_TOKEN:
         logger.error("Telegram Token not found. Bot will not start.")
@@ -159,27 +203,19 @@ def start_bot_thread(app):
     thread = threading.Thread(target=run_telegram_bot, args=(app,))
     thread.daemon = True
     thread.start()
+    _start_sender_worker(app)
 
 # Helper for logging errors from other parts of the app
 def log_error_to_telegram(app, message):
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         try:
-             # Basic implementation: using a temporary loop or blocking call might be tricky in Flask request context
-             # For production, use an async task queue (Celery) or a background thread queue.
-             # Here we will just fire and forget via a thread to avoid blocking response
-             def _send():
-                 asyncio.run(get_telegram_service(app).send_error_log(message))
-             
-             threading.Thread(target=_send).start()
+             _enqueue_telegram_message(app, "error", message)
         except Exception as e:
             logger.error(f"Error dispatching telegram log: {e}")
 
 def send_telegram_notification(app, message):
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         try:
-             def _send():
-                 asyncio.run(get_telegram_service(app).send_message(message))
-             
-             threading.Thread(target=_send).start()
+             _enqueue_telegram_message(app, "notification", message)
         except Exception as e:
             logger.error(f"Error dispatching telegram notification: {e}")
