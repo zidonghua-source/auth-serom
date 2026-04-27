@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+_telegram_service_instance = None
+_telegram_service_lock = threading.Lock()
 
 class TelegramService:
     def __init__(self, app):
@@ -113,6 +115,14 @@ class TelegramService:
         current_time = datetime.datetime.now()
         await update.message.reply_text(f"🕒 Current Time: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
+def get_telegram_service(app):
+    global _telegram_service_instance
+    if _telegram_service_instance is None:
+        with _telegram_service_lock:
+            if _telegram_service_instance is None:
+                _telegram_service_instance = TelegramService(app)
+    return _telegram_service_instance
+
 def run_telegram_bot(app):
     if not TELEGRAM_BOT_TOKEN:
         logger.error("Telegram Token not found. Bot will not start.")
@@ -120,7 +130,7 @@ def run_telegram_bot(app):
 
     # Define post_init hook to run startup notification
     async def on_startup(application):
-        telegram_service = TelegramService(app)
+        telegram_service = get_telegram_service(app)
         # We can update the service's bot to match the application's bot if desired, 
         # but the service initialized its own. 
         # Let's just call the notification method.
@@ -128,7 +138,7 @@ def run_telegram_bot(app):
         await telegram_service.startup_notification()
 
     # Create telegram service instance once for handlers
-    telegram_service = TelegramService(app)
+    telegram_service = get_telegram_service(app)
 
     # Use post_init to schedule startup tasks safely within the bot's loop
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(on_startup).build()
@@ -158,7 +168,7 @@ def log_error_to_telegram(app, message):
              # For production, use an async task queue (Celery) or a background thread queue.
              # Here we will just fire and forget via a thread to avoid blocking response
              def _send():
-                 asyncio.run(TelegramService(app).send_error_log(message))
+                 asyncio.run(get_telegram_service(app).send_error_log(message))
              
              threading.Thread(target=_send).start()
         except Exception as e:
@@ -168,7 +178,7 @@ def send_telegram_notification(app, message):
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         try:
              def _send():
-                 asyncio.run(TelegramService(app).send_message(message))
+                 asyncio.run(get_telegram_service(app).send_message(message))
              
              threading.Thread(target=_send).start()
         except Exception as e:
