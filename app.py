@@ -36,7 +36,7 @@ with app.app_context():
         logging.error(f"Database connection error (could not create tables): {e}")
 
 if __name__ == '__main__':
-    # Start Telegram Bot
+    # Start Telegram sender worker (HTTP API, no polling)
     start_bot_thread(app)
     
     # Run on all interfaces so it's accessible

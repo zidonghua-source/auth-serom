@@ -70,8 +70,7 @@ def healthy():
                 msg += f"\nIMEI: {imei}"
             if stid:
                 msg += f"\nSTID: {stid}"
-            # send_telegram_notification(current_app._get_current_object(), msg)
-
+            send_telegram_notification(current_app._get_current_object(), msg)
             # Return status
             if str(device.status) != '0':
                 return "1", 200
