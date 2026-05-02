@@ -5,6 +5,7 @@ import datetime
 import queue
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.request import HTTPXRequest
 from extensions import db
 from models.device_info import DeviceInfo
 import logging
@@ -20,10 +21,27 @@ _sender_queue = queue.Queue(maxsize=5000)
 _sender_thread = None
 _sender_thread_lock = threading.Lock()
 
+TELEGRAM_CONNECT_TIMEOUT = float(os.environ.get("TELEGRAM_CONNECT_TIMEOUT", "5"))
+TELEGRAM_READ_TIMEOUT = float(os.environ.get("TELEGRAM_READ_TIMEOUT", "20"))
+TELEGRAM_WRITE_TIMEOUT = float(os.environ.get("TELEGRAM_WRITE_TIMEOUT", "20"))
+TELEGRAM_POOL_TIMEOUT = float(os.environ.get("TELEGRAM_POOL_TIMEOUT", "5"))
+TELEGRAM_POOL_SIZE = int(os.environ.get("TELEGRAM_POOL_SIZE", "20"))
+
+
+def _build_telegram_request(pool_size: int) -> HTTPXRequest:
+    return HTTPXRequest(
+        connect_timeout=TELEGRAM_CONNECT_TIMEOUT,
+        read_timeout=TELEGRAM_READ_TIMEOUT,
+        write_timeout=TELEGRAM_WRITE_TIMEOUT,
+        pool_timeout=TELEGRAM_POOL_TIMEOUT,
+        connection_pool_size=pool_size,
+    )
+
 class TelegramService:
     def __init__(self, app):
          self.app = app
-         self.bot = Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
+         self._request = _build_telegram_request(TELEGRAM_POOL_SIZE)
+         self.bot = Bot(token=TELEGRAM_BOT_TOKEN, request=self._request) if TELEGRAM_BOT_TOKEN else None
 
     async def send_error_log(self, message):
         if self.bot and TELEGRAM_CHAT_ID:
@@ -185,7 +203,16 @@ def run_telegram_bot(app):
     telegram_service = get_telegram_service(app)
 
     # Use post_init to schedule startup tasks safely within the bot's loop
-    application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(on_startup).build()
+    telegram_request = _build_telegram_request(TELEGRAM_POOL_SIZE)
+    get_updates_request = _build_telegram_request(max(2, TELEGRAM_POOL_SIZE // 2))
+    application = (
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .request(telegram_request)
+        .get_updates_request(get_updates_request)
+        .post_init(on_startup)
+        .build()
+    )
     
     # Register handlers
     application.add_handler(CommandHandler("setstatus", telegram_service.set_status_command))

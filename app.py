@@ -40,5 +40,5 @@ if __name__ == '__main__':
     start_bot_thread(app)
     
     # Run on all interfaces so it's accessible
-    app.run(host='0.0.0.0', port=PORT) 
+    app.run(host='0.0.0.0', port=PORT, use_reloader=False)
     # use_reloader=False is important when running threads to avoid duplicate threads
