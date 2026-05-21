@@ -1,5 +1,5 @@
 #!/bin/bash
-# pm2 start start.sh --interpreter bash --name "SE-Rom-API"
+# pm2 start start.sh --interpreter bash --name "SEROM-API"
 set -e
 
 echo "Pulling latest code..."
