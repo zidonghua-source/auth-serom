@@ -1,12 +1,13 @@
 const DeviceModel = require("../models/DeviceModel");
 const TelegramService = require("../services/TelegramService");
+const { sendOk, sendError } = require("../utils/response");
 
 class HealthyController {
   static async handle(req, res) {
     const { sn, imei, stid } = req.query;
 
     if (!sn) {
-      return res.status(400).json({ ok: false, error: "Missing required query: sn" });
+      return sendError(res, "Missing required query: sn");
     }
 
     try {
@@ -14,8 +15,7 @@ class HealthyController {
       TelegramService.notifyHealthy({ sn, imei, stid, isNew });
 
       const device = await DeviceModel.findBySn(sn);
-      return res.json({
-        ok: true,
+      return sendOk(res, {
         sn: device.sn,
         imei: device.imei,
         stid: device.stid,
@@ -25,7 +25,7 @@ class HealthyController {
       });
     } catch (err) {
       console.error("[HealthyController]", err);
-      return res.status(500).json({ ok: false, error: "Internal server error" });
+      return sendError(res, "Internal server error");
     }
   }
 }
