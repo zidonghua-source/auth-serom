@@ -30,9 +30,7 @@ class SensorConfigController {
         });
       }
 
-      return sendOk(res, {
-        data: config.data,
-      });
+      res.status(200).json({ ...data });
     } catch (err) {
       console.error("[SensorConfigController]", err);
       return sendError(res, "Failed to load sensor config");
