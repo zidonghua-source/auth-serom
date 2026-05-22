@@ -31,8 +31,6 @@ class SensorConfigController {
       }
 
       return sendOk(res, {
-        index: config.index,
-        name: config.name,
         data: config.data,
       });
     } catch (err) {
