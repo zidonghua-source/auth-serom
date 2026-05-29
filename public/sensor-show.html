@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sensor Logger — Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --accent: #3d8bfd;
+      --border: #2d3a4f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    header p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: flex-end;
+      padding: 0.75rem 1.25rem;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .toolbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-left: auto;
+      align-items: center;
+    }
+    label { font-size: 0.8rem; color: var(--muted); }
+    select {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.4rem 0.6rem;
+      min-width: 200px;
+    }
+    #sensorSelect { display: none; min-width: 180px; }
+    .layout.sidebar-collapsed #sensorSelect { display: block; }
+    .btn {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { filter: brightness(1.08); color: #fff; }
+    .layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: calc(100vh - 8.5rem);
+    }
+    .layout.sidebar-collapsed {
+      grid-template-columns: 1fr;
+    }
+    @media (max-width: 768px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      #sensorSelect { display: block !important; }
+    }
+    .sidebar {
+      position: relative;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 8.5rem);
+    }
+    .layout.sidebar-collapsed .sidebar {
+      display: none;
+    }
+    .sidebar-toggle {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.35rem;
+      z-index: 2;
+      width: 1.6rem;
+      height: 1.6rem;
+      padding: 0;
+      font-size: 0.7rem;
+      line-height: 1;
+      border-radius: 4px;
+    }
+    nav {
+      flex: 1;
+      overflow-y: auto;
+    }
+    nav button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      padding: 0.65rem 1rem;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.9rem;
+      border-bottom: 1px solid var(--border);
+    }
+    nav button:hover { background: var(--surface2); }
+    nav button.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    nav button span {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+    nav button.active span { color: rgba(255,255,255,0.8); }
+    main {
+      padding: 0.75rem 1.25rem 1rem;
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 8.5rem);
+      gap: 0.5rem;
+    }
+    .meta-panel {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .meta-panel summary {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+      list-style: none;
+      user-select: none;
+    }
+    .meta-panel summary::-webkit-details-marker { display: none; }
+    .meta-panel summary::before {
+      content: "▸ ";
+      color: var(--muted);
+      display: inline-block;
+      width: 1em;
+    }
+    .meta-panel[open] summary::before { content: "▾ "; }
+    .meta-scroll {
+      max-height: 200px;
+      overflow: auto;
+      border-top: 1px solid var(--border);
+    }
+    .meta-panel .meta-table {
+      margin: 0;
+      border: none;
+      border-radius: 0;
+    }
+    .meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+      background: var(--surface);
+    }
+    .meta-table th,
+    .meta-table td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      vertical-align: top;
+      word-break: break-word;
+    }
+    .meta-table thead th {
+      background: var(--surface2);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .meta-table tbody th {
+      width: 11rem;
+      min-width: 9rem;
+      color: var(--muted);
+      font-weight: 500;
+      background: rgba(36, 48, 68, 0.5);
+    }
+    .meta-table tbody tr:nth-child(even) td {
+      background: rgba(26, 35, 50, 0.6);
+    }
+    .chart-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .chart-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+      flex-shrink: 0;
+    }
+    .chart-header h2 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      flex: 1;
+    }
+    .chart-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      position: relative;
+      flex: 1;
+      min-height: 280px;
+      height: calc(100vh - 12rem);
+      width: 100%;
+      overflow: hidden;
+    }
+    .chart-wrap canvas {
+      display: block;
+      max-width: 100%;
+    }
+    .layout.meta-collapsed .chart-wrap,
+    .layout.sidebar-collapsed.meta-collapsed .chart-wrap {
+      height: calc(100vh - 10rem);
+    }
+    .layout.sidebar-collapsed:not(.meta-collapsed) .chart-wrap {
+      height: calc(100vh - 11rem);
+    }
+    .status {
+      margin: 0;
+      padding: 0.25rem 0;
+      font-size: 0.75rem;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .error { color: #ff6b6b; }
+    .legend-hint {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sensor Logger Viewer</h1>
+    <p>Biểu đồ dữ liệu cảm biến từ file JSON trong thư mục sensor-config</p>
+  </header>
+  <div class="toolbar">
+    <div>
+      <label for="fileSelect">File ghi âm</label><br />
+      <select id="fileSelect"></select>
+    </div>
+    <div>
+      <label for="sensorSelect">Cảm biến</label><br />
+      <select id="sensorSelect"></select>
+    </div>
+    <div class="toolbar-actions">
+      <button type="button" class="btn" id="btnToggleSidebar" title="Ẩn/hiện danh sách cảm biến">◀ Cảm biến</button>
+      <button type="button" class="btn btn-primary" id="btnFocusChart" title="Thu gọn metadata, mở rộng biểu đồ">Mở rộng biểu đồ</button>
+    </div>
+  </div>
+  <div class="layout meta-collapsed" id="layout">
+    <aside class="sidebar" id="sidebar">
+      <button type="button" class="btn sidebar-toggle" id="btnSidebarClose" title="Thu gọn">◀</button>
+      <nav id="sensorNav"></nav>
+    </aside>
+    <main>
+      <details class="meta-panel" id="metaSection" hidden>
+        <summary>Thông tin ghi (Metadata)</summary>
+        <div class="meta-scroll">
+          <table class="meta-table" id="metaPanel" hidden>
+            <thead>
+              <tr>
+                <th scope="col">Trường</th>
+                <th scope="col">Giá trị</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </details>
+      <section class="chart-section">
+        <div class="chart-header">
+          <h2 id="chartTitle">—</h2>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="sensorChart"></canvas>
+        </div>
+        <p class="legend-hint" id="chartHint"></p>
+        <p class="status" id="status">Đang tải danh sách file…</p>
+      </section>
+    </main>
+  </div>
+  <script>
+    const fileSelect = document.getElementById("fileSelect");
+    const sensorSelect = document.getElementById("sensorSelect");
+    const sensorNav = document.getElementById("sensorNav");
+    const layout = document.getElementById("layout");
+    const metaSection = document.getElementById("metaSection");
+    const metaPanel = document.getElementById("metaPanel");
+    const metaBody = metaPanel.querySelector("tbody");
+    const chartTitle = document.getElementById("chartTitle");
+    const statusEl = document.getElementById("status");
+    const chartHint = document.getElementById("chartHint");
+    const chartWrap = document.querySelector(".chart-wrap");
+    let chart = null;
+    let currentIndex = null;
+    let activeSensor = null;
+    let fileInfo = null;
+    let resizeChartTimer = null;
+
+    function resizeChart() {
+      if (!chart) return;
+      requestAnimationFrame(() => {
+        if (!chart) return;
+        chart.resize();
+        chart.update("none");
+      });
+    }
+
+    function scheduleChartResize() {
+      clearTimeout(resizeChartTimer);
+      resizeChartTimer = setTimeout(resizeChart, 50);
+    }
+
+    new ResizeObserver(scheduleChartResize).observe(chartWrap);
+    new ResizeObserver(scheduleChartResize).observe(layout);
+
+    function setSidebarCollapsed(collapsed) {
+      layout.classList.toggle("sidebar-collapsed", collapsed);
+      document.getElementById("btnToggleSidebar").textContent =
+        collapsed ? "▶ Cảm biến" : "◀ Cảm biến";
+      scheduleChartResize();
+    }
+
+    function setMetaCollapsed(collapsed) {
+      layout.classList.toggle("meta-collapsed", collapsed);
+      metaSection.open = !collapsed;
+      scheduleChartResize();
+    }
+
+    document.getElementById("btnToggleSidebar").addEventListener("click", () => {
+      setSidebarCollapsed(!layout.classList.contains("sidebar-collapsed"));
+    });
+    document.getElementById("btnSidebarClose").addEventListener("click", () => {
+      setSidebarCollapsed(true);
+    });
+    document.getElementById("btnFocusChart").addEventListener("click", () => {
+      setMetaCollapsed(true);
+      setSidebarCollapsed(true);
+    });
+    metaSection.addEventListener("toggle", () => {
+      layout.classList.toggle("meta-collapsed", !metaSection.open);
+      scheduleChartResize();
+    });
+    sensorSelect.addEventListener("change", () => {
+      if (sensorSelect.value) selectSensor(sensorSelect.value);
+    });
+    window.addEventListener("resize", scheduleChartResize);
+
+    const SERIES_COLORS = [
+      "#e74c3c", "#3498db", "#2ecc71", "#f39c12",
+      "#9b59b6", "#1abc9c", "#e67e22", "#ecf0f1",
+    ];
+
+    async function api(path) {
+      const res = await fetch(path);
+      const json = await res.json();
+      if (json.status !== "ok") throw new Error(json.error || "API error");
+      return json;
+    }
+
+    function setStatus(msg, isError) {
+      statusEl.textContent = msg;
+      statusEl.className = isError ? "status error" : "status";
+    }
+
+    function metaRow(key, value) {
+      return `<tr><th scope="row">${escapeHtml(key)}</th><td>${escapeHtml(String(value))}</td></tr>`;
+    }
+
+    function renderMeta(meta) {
+      metaBody.innerHTML = "";
+      metaPanel.hidden = true;
+      metaSection.hidden = true;
+      if (!meta || !Object.keys(meta).length) return;
+      const keys = [
+        "device name", "recording time", "recording timezone",
+        "platform", "appVersion", "sensors", "sampleRateMs",
+      ];
+      const rows = [];
+      const shown = new Set();
+      for (const key of keys) {
+        if (meta[key] != null && meta[key] !== "") {
+          shown.add(key);
+          rows.push(metaRow(key, meta[key]));
+        }
+      }
+      for (const [k, v] of Object.entries(meta)) {
+        if (shown.has(k) || v == null || v === "") continue;
+        rows.push(metaRow(k, v));
+      }
+      metaBody.innerHTML = rows.join("");
+      metaPanel.hidden = false;
+      metaSection.hidden = false;
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    function renderSensorNav(sensors) {
+      sensorNav.innerHTML = "";
+      sensorSelect.innerHTML = "";
+      for (const { name, count } of sensors) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.dataset.sensor = name;
+        btn.innerHTML = `${escapeHtml(name)}<span>${count.toLocaleString()} mẫu</span>`;
+        btn.addEventListener("click", () => selectSensor(name));
+        sensorNav.appendChild(btn);
+
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = `${name} (${count.toLocaleString()})`;
+        sensorSelect.appendChild(opt);
+      }
+    }
+
+    function updateNavActive() {
+      sensorNav.querySelectorAll("button").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.sensor === activeSensor);
+      });
+    }
+
+    function destroyChart() {
+      if (chart) {
+        chart.destroy();
+        chart = null;
+      }
+    }
+
+    function buildChart(series) {
+      destroyChart();
+      const ctx = document.getElementById("sensorChart").getContext("2d");
+      const datasets = series.datasets.map((ds, i) => ({
+        label: ds.field,
+        data: ds.data,
+        borderColor: SERIES_COLORS[i % SERIES_COLORS.length],
+        backgroundColor: "transparent",
+        borderWidth: 1.2,
+        pointRadius: 0,
+        tension: 0.05,
+      }));
+
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: series.labels,
+          datasets,
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              labels: { color: "#e8edf4" },
+            },
+            tooltip: {
+              callbacks: {
+                title(items) {
+                  if (!items.length) return "";
+                  const t = series.labels[items[0].dataIndex];
+                  return `t = ${Number(t).toFixed(3)} s`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              title: { display: true, text: "seconds_elapsed", color: "#8b9cb3" },
+              ticks: {
+                color: "#8b9cb3",
+                maxTicksLimit: 12,
+                callback(val) {
+                  return Number(series.labels[val]).toFixed(2);
+                },
+              },
+              grid: { color: "#2d3a4f" },
+            },
+            y: {
+              ticks: { color: "#8b9cb3" },
+              grid: { color: "#2d3a4f" },
+            },
+          },
+        },
+      });
+
+      chartHint.textContent =
+        `Hiển thị ${series.displayedPoints.toLocaleString()} / ${series.totalPoints.toLocaleString()} điểm · Trục X: thời gian (giây)`;
+      scheduleChartResize();
+    }
+
+    async function selectSensor(name) {
+      activeSensor = name;
+      chartTitle.textContent = name;
+      sensorSelect.value = name;
+      updateNavActive();
+      setStatus(`Đang tải ${name}…`);
+      try {
+        const data = await api(
+          `/sensor-show/api/series?index=${currentIndex}&sensor=${encodeURIComponent(name)}`
+        );
+        buildChart(data);
+        setStatus("");
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    }
+
+    async function loadFile(index) {
+      currentIndex = index;
+      activeSensor = null;
+      destroyChart();
+      sensorNav.innerHTML = "";
+      metaBody.innerHTML = "";
+      metaPanel.hidden = true;
+      metaSection.hidden = true;
+      chartHint.textContent = "";
+      chartTitle.textContent = "—";
+      setStatus("Đang đọc file…");
+
+      try {
+        fileInfo = await api(`/sensor-show/api/info?index=${index}`);
+        if (!fileInfo.supported) {
+          setStatus(
+            "File không đúng định dạng JSON export của Sensor Logger (cần object có trường sensor).",
+            true
+          );
+          return;
+        }
+        renderMeta(fileInfo.metadata);
+        setMetaCollapsed(true);
+        renderSensorNav(fileInfo.sensors);
+        setStatus(`${fileInfo.recordCount.toLocaleString()} bản ghi · ${fileInfo.name}`);
+        if (fileInfo.sensors.length) {
+          await selectSensor(fileInfo.sensors[0].name);
+        }
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    }
+
+    async function init() {
+      try {
+        const { count, items } = await api("/sensor-show/api/files");
+        fileSelect.innerHTML = "";
+        if (!count) {
+          setStatus("Không có file .json trong sensor-config", true);
+          return;
+        }
+        for (const item of items) {
+          const opt = document.createElement("option");
+          opt.value = item.index;
+          opt.textContent = `${item.index}. ${item.name}`;
+          fileSelect.appendChild(opt);
+        }
+        fileSelect.addEventListener("change", () => loadFile(Number(fileSelect.value)));
+        await loadFile(items[0].index);
+      } catch (err) {
+        setStatus(err.message, true);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
